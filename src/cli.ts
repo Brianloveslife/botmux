@@ -4297,6 +4297,8 @@ async function abandonSessionAuthoritatively(
       const res = await postSessionCliIpc(ipcPort, session.sessionId, 'close', {});
       const body = await res.json().catch(() => ({} as Record<string, unknown>));
       if (res.ok && (body as { ok?: unknown }).ok) {
+        const archiveError = (body as { archiveError?: unknown }).archiveError;
+        if (archiveError) console.warn(`⚠ Botmux 会话已关闭，Codex 归档失败：${archiveError}`);
         // Shared parser: a body that DECLARES a residual must warn even when the
         // `residual` object is missing/malformed, or a bad payload silently
         // becomes an ordinary success again.

@@ -3418,6 +3418,12 @@ function SessionsPage(): React.JSX.Element {
         if (r.status !== 401) toast(`Close failed: ${body?.error ?? r.status}`, { kind: 'error' });
         return false;
       }
+      if (body?.archiveError) {
+        const detail = body.archiveError === 'codex_archive_target_unverified'
+          ? t('sessions.codexArchiveTargetUnverified') : body.archiveError === 'codex_archive_target_invalid'
+            ? t('sessions.codexArchiveTargetInvalid') : body.archiveError;
+        toast(t('sessions.codexArchiveFailed', { count: 1, detail }), { kind: 'warning' });
+      }
       // Closed locally, but a remote session was left running (its control plane
       // could not be verified). The drawer is about to close, so this is the only
       // moment the operator can be told.
@@ -3604,6 +3610,7 @@ function SessionsPage(): React.JSX.Element {
     // Counted separately: a residual is NOT a failure (the row closed) but must
     // never be folded into the silent success total.
     const residualIds: string[] = [];
+    const archiveErrors: string[] = [];
     const queue = [...ids];
     async function worker() {
       while (queue.length) {
@@ -3614,6 +3621,7 @@ function SessionsPage(): React.JSX.Element {
           if (!r.ok || body?.ok === false) {
             failed += 1;
           } else {
+            if (body?.archiveError) archiveErrors.push(String(body.archiveError));
             const residual = parseCloseResidual(body);
             if (residual) residualIds.push(describeCloseResidual(residual));
           }
@@ -3630,6 +3638,7 @@ function SessionsPage(): React.JSX.Element {
     setSelected(new Set());
     refresh();
     if (failed > 0) toast(`Failed: ${failed}/${ids.length}`, { kind: 'error' });
+    if (archiveErrors.length) toast(t('sessions.codexArchiveFailed', { count: archiveErrors.length, detail: archiveErrors.join(', ') }), { kind: 'warning' });
     if (residualIds.length > 0) {
       // Fires even when nothing failed — otherwise an all-residual batch is
       // entirely silent and the operator believes everything is gone. Kind-neutral

@@ -3092,6 +3092,8 @@ export async function handleCardAction(data: CardActionData, deps: CardHandlerDe
           closeResult = await closeWorkerPoolSession(targetSessionId, {
             awaitWorkerExit: false,
             cardVisibility: value?.visibility === 'private' ? 'private' : 'public',
+            explicitClose: true,
+            onArchiveError: error => sessionReply(rootId, `⚠️ Botmux 会话已关闭，Codex 归档失败：${error}`),
           });
         } catch (err) {
           logger.error(`[${tag(current)}] Refused close because backing teardown was not verified: ${err}`);

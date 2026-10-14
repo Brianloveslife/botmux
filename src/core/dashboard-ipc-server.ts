@@ -1616,7 +1616,6 @@ ipcRoute('POST', '/api/sessions/:sessionId/close', async (req, res, params) => {
     : body.idleCleanupSource === 'scheduled' ? 'scheduled' : 'unspecified';
   logger.info(`[session-close] session=${params.sessionId} intent=${body.idleCleanup === true ? `idle_cleanup:${cleanupSource}` : 'explicit_close'}`);
   const cleanupArchive = async (): Promise<string | undefined> => {
-    if (body.idleCleanup !== true) return;
     const row = sessionStore.getOwnedSession(params.sessionId);
     if (!row) return;
     const enabled = readGlobalConfig().sessionCleanup?.archiveCodex === true;
@@ -1624,7 +1623,7 @@ ipcRoute('POST', '/api/sessions/:sessionId/close', async (req, res, params) => {
     const outcome = error === 'codex_archive_target_unverified' || error === 'codex_archive_target_invalid'
       ? error : error ? 'rpc_failed' : !enabled ? 'disabled'
         : row.codexCleanupArchive?.state === 'archived' ? 'archived' : 'not_applicable';
-    logger.info(`[idle-cleanup] session=${row.sessionId} source=${cleanupSource} codexArchive=${outcome}`);
+    logger.info(`[idle-cleanup] session=${row.sessionId} source=${body.idleCleanup === true ? cleanupSource : 'explicit_close'} codexArchive=${outcome}`);
     return error;
   };
   // Resolve the owning bot for the FIFO-drain gate from the live DaemonSession
@@ -1635,7 +1634,7 @@ ipcRoute('POST', '/api/sessions/:sessionId/close', async (req, res, params) => {
   const larkAppId = ds?.larkAppId || initial?.larkAppId || cachedLarkAppId;
   if (!larkAppId) {
     const r = await closeSession(params.sessionId);
-    const archiveError = r.ok && !initiallyClosed ? await cleanupArchive() : undefined;
+    const archiveError = r.ok && (!initiallyClosed || initial?.codexCleanupArchive) ? await cleanupArchive() : undefined;
     return jsonRes(res, r.ok ? 200 : 502, { ...r, ...(archiveError ? { archiveError } : {}) });
   }
   return withBotTurnMutation(larkAppId, async () => {

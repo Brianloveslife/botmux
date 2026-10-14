@@ -2938,7 +2938,7 @@ describe('handleCommand', () => {
         unsubscribe();
       }
 
-      expect(closeSession).toHaveBeenCalledWith('sess-001');
+      expect(closeSession).toHaveBeenCalledWith('sess-001', expect.objectContaining({ explicitClose: true, onArchiveError: expect.any(Function) }));
       // The command must not bypass closeSession's verified ZMX teardown by
       // mutating worker/store state directly.
       expect(killWorker).not.toHaveBeenCalled();
@@ -3087,7 +3087,7 @@ describe('handleCommand', () => {
 
       await handleCommand('/close', ROOT_ID, makeLarkMessage(`/close wt --yes --state=${closeWorktreeState(ds.session.sessionId)}`), deps, LARK_APP_ID);
 
-      expect(closeSession).toHaveBeenCalledWith(ds.session.sessionId);
+      expect(closeSession).toHaveBeenCalledWith(ds.session.sessionId, expect.objectContaining({ explicitClose: true, onArchiveError: expect.any(Function) }));
       expect(removeRepoWorktree).toHaveBeenCalledWith('/home/testuser/project', '/home/testuser/project-wt-task');
       const replies = vi.mocked(deps.sessionReply).mock.calls.map(c => c[1]).join('\n');
       expect(replies).toContain('额外关闭 0 个同 worktree 会话');
@@ -3244,8 +3244,8 @@ describe('handleCommand', () => {
 
       await handleCommand('/close', ROOT_ID, makeLarkMessage(`/close wt --yes --state=${closeWorktreeState(ds.session.sessionId, ['sibling-1'])}`), deps, LARK_APP_ID);
 
-      expect(closeSession).toHaveBeenCalledWith(ds.session.sessionId);
-      expect(closeSession).toHaveBeenCalledWith('sibling-1');
+      expect(closeSession).toHaveBeenCalledWith(ds.session.sessionId, expect.objectContaining({ explicitClose: true, onArchiveError: expect.any(Function) }));
+      expect(closeSession).toHaveBeenCalledWith('sibling-1', expect.objectContaining({ explicitClose: true, onArchiveError: expect.any(Function) }));
       expect(removeRepoWorktree).toHaveBeenCalledWith('/home/testuser/project', '/home/testuser/project-wt-task');
       const replies = vi.mocked(deps.sessionReply).mock.calls.map(c => c[1]).join('\n');
       expect(replies).toContain('额外关闭 1 个同 worktree 会话');
@@ -3287,7 +3287,7 @@ describe('handleCommand', () => {
 
       await handleCommand('/close', ROOT_ID, makeLarkMessage(`/close wt --yes --state=${closeWorktreeState(ds.session.sessionId, [], 'clean-state')}`), deps, LARK_APP_ID);
 
-      expect(closeSession).toHaveBeenCalledWith(ds.session.sessionId);
+      expect(closeSession).toHaveBeenCalledWith(ds.session.sessionId, expect.objectContaining({ explicitClose: true, onArchiveError: expect.any(Function) }));
       expect(removeRepoWorktree).not.toHaveBeenCalled();
       expect(putWorktreeCleanupJob).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
         worktreeDir: '/home/testuser/project-wt-task',
@@ -3314,7 +3314,7 @@ describe('handleCommand', () => {
 
       await handleCommand('/close', ROOT_ID, makeLarkMessage(`/close wt --yes --state=${closeWorktreeState(ds.session.sessionId, ['sibling-1'])}`), deps, LARK_APP_ID);
 
-      expect(closeSession).toHaveBeenCalledWith('sibling-1');
+      expect(closeSession).toHaveBeenCalledWith('sibling-1', expect.objectContaining({ explicitClose: true, onArchiveError: expect.any(Function) }));
       expect(removeRepoWorktree).not.toHaveBeenCalled();
       const replies = vi.mocked(deps.sessionReply).mock.calls.map(c => c[1]).join('\n');
       expect(replies).toContain('其他 1 个会话未能关闭');

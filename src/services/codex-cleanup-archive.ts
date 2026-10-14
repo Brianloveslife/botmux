@@ -22,7 +22,7 @@ export function codexCleanupEligible(session: Session): boolean {
 type Persist = (session: Session) => void;
 type ArchiveRpc = typeof setCodexAppThreadArchived;
 
-/** Called only after an idle-cleanup close commits. Persist intent before RPC
+/** Called only after an explicit or idle-cleanup close commits. Persist intent before RPC
  * so a timeout/crash never loses the obligation to unarchive on reopen. */
 async function archiveCodexForCleanupImpl(
   session: Session, enabled: boolean, persist: Persist,
@@ -80,6 +80,15 @@ export function archiveCodexForCleanup(session: Session, enabled: boolean, persi
   return serialized(session.sessionId, () => archiveCodexForCleanupImpl(session, enabled, persist, rpc));
 }
 export function restoreCodexCleanupArchive(session: Session, persist: Persist,
-  rpc: ArchiveRpc = setCodexAppThreadArchived): Promise<void> {
-  return serialized(session.sessionId, () => restoreCodexCleanupArchiveImpl(session, persist, rpc));
+  rpc: ArchiveRpc = setCodexAppThreadArchived, reload?: () => Session | undefined): Promise<void> {
+  return serialized(session.sessionId, async () => {
+    // A card may return before its queued archive has persisted the journal.
+    // Reload INSIDE the lifecycle queue, after the archive has settled.
+    const current = reload ? reload() : session;
+    if (!current || current.sessionId !== session.sessionId || current.cliSessionId !== session.cliSessionId) {
+      throw new Error('Codex cleanup archive identity changed; refusing recovery');
+    }
+    await restoreCodexCleanupArchiveImpl(current, persist, rpc);
+    session.codexCleanupArchive = current.codexCleanupArchive;
+  });
 }

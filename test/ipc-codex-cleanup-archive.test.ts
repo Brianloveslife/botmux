@@ -35,13 +35,13 @@ async function close(idleCleanup: boolean, enabled: boolean, patch: Partial<Sess
   return { row, response, body: await response.json() };
 }
 describe('daemon close idle-cleanup intent', () => {
-  it('archives only after closing when both intent and setting are on', async () => {
-    const result = await close(true, true);
+  it.each([false, true])('archives only after explicit/idle close commits (%s)', async intent => {
+    const result = await close(intent, true);
     expect(result.body.ok).toBe(true);
     expect(setCodexAppThreadArchived).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'mock-native', archived: true }));
     expect(result.row.codexCleanupArchive?.state).toBe('archived');
   });
-  it.each([[false, true], [true, false]])('ordinary close / setting off does not archive (%s/%s)', async (intent, enabled) => {
+  it.each([[false, false], [true, false]])('setting off does not archive (%s/%s)', async (intent, enabled) => {
     expect((await close(intent, enabled)).body.ok).toBe(true);
     expect(setCodexAppThreadArchived).not.toHaveBeenCalled();
   });
@@ -59,15 +59,28 @@ describe('daemon close idle-cleanup intent', () => {
     expect((await close(true, true, { cliId: 'codex-app', backendType: undefined })).body.ok).toBe(true);
     expect(setCodexAppThreadArchived).toHaveBeenCalledOnce();
   });
-  it('skips adopted external sessions', async () => {
-    expect((await close(true, true, { adoptedFrom: { cwd: '/tmp' } })).body.ok).toBe(true);
+  it.each([false, true])('skips adopted external sessions (%s)', async intent => {
+    expect((await close(intent, true, { adoptedFrom: { cwd: '/tmp' } })).body.ok).toBe(true);
     expect(setCodexAppThreadArchived).not.toHaveBeenCalled();
   });
-  it('keeps successful local close and reports a recoverable archive failure', async () => {
-    const result = await close(true, true, {}, true);
+  it.each([false, true])('keeps local close and recoverable failure (%s)', async intent => {
+    const result = await close(intent, true, {}, true);
     expect(result.response.status).toBe(200);
     expect(result.body).toMatchObject({ ok: true, archiveError: 'mock archive error' });
     expect(result.row.status).toBe('closed');
     expect(result.row.codexCleanupArchive?.state).toBe('pending');
   });
+  it('does not backfill previously closed historical rows on explicit close', async () => {
+    expect((await close(false, true, { status: 'closed' })).body.ok).toBe(true);
+    expect(setCodexAppThreadArchived).not.toHaveBeenCalled();
+  });
+  it('retries pending explicit close and skips an already archived journal', async () => {
+    await close(false, true, { status: 'closed', codexCleanupArchive: { threadId: 'mock-native', state: 'pending' } });
+    expect(setCodexAppThreadArchived).toHaveBeenCalledOnce();
+    await handle?.close(); handle = undefined;
+    vi.mocked(setCodexAppThreadArchived).mockClear();
+    await close(false, true, { status: 'closed', codexCleanupArchive: { threadId: 'mock-native', state: 'archived' } });
+    expect(setCodexAppThreadArchived).not.toHaveBeenCalled();
+  });
+
 });

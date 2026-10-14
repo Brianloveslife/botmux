@@ -161,7 +161,7 @@ export const SESSION_CLEANUP_DEFAULT_INTERVAL_MINUTES = 60;
 export const SESSION_CLEANUP_DEFAULT_HOURS: SessionCleanupHours = 168;
 
 export interface SessionCleanupGlobalConfig {
-  /** 手动/定时清理时归档有明确归属的 Codex 会话；默认关闭。 */
+  /** 手动关闭或手动/定时清理时归档有明确归属的 Codex 会话；默认关闭。 */
   archiveCodex?: boolean;
   /** 定时自动清理空闲会话开关。缺省关闭 —— 不开启则完全保持既有（纯手动）行为。 */
   enabled?: boolean;

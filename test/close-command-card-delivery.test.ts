@@ -1,3 +1,7 @@
+import * as globalConfig from '../src/global-config.js';
+import { setCodexAppThreadArchived } from '../src/services/codex-app-threads.js';
+import { restoreCodexCleanupArchive } from '../src/services/codex-cleanup-archive.js';
+vi.mock('../src/services/codex-app-threads.js', async original => ({ ...await original<typeof import('../src/services/codex-app-threads.js')>(), setCodexAppThreadArchived: vi.fn(async () => undefined) }));
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -24,6 +28,7 @@ afterEach(() => {
   workerPool.setActiveSessionsRegistry(new Map());
   config.session.dataDir = previousDataDir;
   sessionStore.init('app-close-command');
+  vi.mocked(setCodexAppThreadArchived).mockReset();
   vi.restoreAllMocks();
   rmSync(dataDir, { recursive: true, force: true });
 });
@@ -51,7 +56,7 @@ function fixture(options: {
   workerPool.setActiveSessionsRegistry(activeSessions);
   const patch = vi.spyOn(larkClient, 'updateMessage').mockResolvedValue(undefined as any);
   const ephemeral = vi.spyOn(larkClient, 'sendEphemeralCard').mockResolvedValue('om_private');
-  const reply = vi.fn(async () => 'om_reply');
+  const reply = vi.fn(async (..._args: any[]) => 'om_reply');
   const close = () => handleCommand('/close', sessionAnchorId(ds), {
     messageId: 'om_command', rootId: sessionAnchorId(ds), senderId: 'ou_operator',
     senderType: 'user', msgType: 'text', content: '/close', createTime: String(Date.now()),
@@ -63,6 +68,64 @@ function fixture(options: {
 }
 
 describe('/close card delivery through the real session lifecycle', () => {
+  it.each([true, false])('/close honors the archive toggle (%s) and reopening restores', async enabled => {
+    const f = fixture({ streamCardId: 'om_live' });
+    Object.assign(f.ds.session, { cliId: 'codex', backendType: 'pty', cliSessionId: 'mock-native',
+      codexCleanupTarget: { threadId: 'mock-native', codexHome: '/tmp/mock-home', codexBin: '/tmp/mock-bin' } });
+    sessionStore.updateSession(f.ds.session);
+    vi.spyOn(globalConfig, 'readGlobalConfig').mockReturnValue({ sessionCleanup: { archiveCodex: enabled } });
+    await f.close();
+    expect(f.ds.session.status).toBe('closed');
+    if (enabled) {
+      expect(setCodexAppThreadArchived).toHaveBeenCalledWith(expect.objectContaining({ archived: true }));
+      const row = sessionStore.getOwnedSession(f.ds.session.sessionId)!;
+      await restoreCodexCleanupArchive(row, sessionStore.updateSession);
+      expect(setCodexAppThreadArchived).toHaveBeenLastCalledWith(expect.objectContaining({ archived: false }));
+    } else expect(setCodexAppThreadArchived).not.toHaveBeenCalled();
+  });
+  it('/close reports archive failure without losing the successful close or recovery journal', async () => {
+    const f = fixture({ streamCardId: 'om_live' });
+    Object.assign(f.ds.session, { cliId: 'codex', backendType: 'pty', cliSessionId: 'mock-native',
+      codexCleanupTarget: { threadId: 'mock-native', codexHome: '/tmp/mock-home', codexBin: '/tmp/mock-bin' } });
+    sessionStore.updateSession(f.ds.session);
+    vi.spyOn(globalConfig, 'readGlobalConfig').mockReturnValue({ sessionCleanup: { archiveCodex: true } });
+    vi.mocked(setCodexAppThreadArchived).mockRejectedValueOnce(new Error('mock RPC failed'));
+    await f.close();
+    expect(sessionStore.getOwnedSession(f.ds.session.sessionId)).toMatchObject({ status: 'closed', codexCleanupArchive: { state: 'pending' } });
+    expect(f.reply.mock.calls.some(args => String(args[1]).includes('Codex 归档失败'))).toBe(true);
+  });
+  it('card-style close returns before slow archive RPC and serializes reopening', async () => {
+    const f = fixture({ streamCardId: 'om_live' });
+    Object.assign(f.ds.session, { cliId: 'codex', backendType: 'pty', cliSessionId: 'mock-native',
+      codexCleanupTarget: { threadId: 'mock-native', codexHome: '/tmp/mock-home', codexBin: '/tmp/mock-bin' } });
+    sessionStore.updateSession(f.ds.session);
+    vi.spyOn(globalConfig, 'readGlobalConfig').mockReturnValue({ sessionCleanup: { archiveCodex: true } });
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    vi.mocked(setCodexAppThreadArchived).mockImplementationOnce(async () => { await gate; });
+    const notify = vi.fn(async () => undefined);
+    const result = await workerPool.closeSession(f.ds.session.sessionId, {
+      awaitWorkerExit: false, explicitClose: true, onArchiveError: notify,
+    });
+    expect(result.ok).toBe(true);
+    const row = sessionStore.getOwnedSession(f.ds.session.sessionId)!;
+    const reopen = restoreCodexCleanupArchive(row, sessionStore.updateSession, undefined,
+      () => sessionStore.getOwnedSession(f.ds.session.sessionId));
+    release();
+    await reopen;
+    expect(setCodexAppThreadArchived).toHaveBeenLastCalledWith(expect.objectContaining({ archived: false }));
+    expect(row.codexCleanupArchive).toBeUndefined();
+    expect(notify).not.toHaveBeenCalled();
+  });
+  it('background close leaves native Codex untouched even with the switch on', async () => {
+    const f = fixture();
+    Object.assign(f.ds.session, { cliId: 'codex', backendType: 'pty', cliSessionId: 'mock-native',
+      codexCleanupTarget: { threadId: 'mock-native', codexHome: '/tmp/mock-home', codexBin: '/tmp/mock-bin' } });
+    sessionStore.updateSession(f.ds.session);
+    vi.spyOn(globalConfig, 'readGlobalConfig').mockReturnValue({ sessionCleanup: { archiveCodex: true } });
+    await workerPool.closeSession(f.ds.session.sessionId);
+    expect(setCodexAppThreadArchived).not.toHaveBeenCalled();
+  });
   it('patches a thread live card once without posting a second closed card', async () => {
     const f = fixture({ streamCardId: 'om_live' });
     await f.close();

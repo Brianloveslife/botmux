@@ -1348,6 +1348,7 @@ export const messages: Record<string, string> = {
   'card.dashboard.sessions.confirm.close.title': 'Close this session?',
   'card.dashboard.sessions.confirm.close.text': 'Once closed the session cannot continue and any in-flight progress may be lost. Session: {title}',
   'card.dashboard.sessions.close_failed': '⚠️ Close failed: {reason}',
+  'card.dashboard.sessions.codex_archive_failed': '⚠️ Botmux session closed, but Codex archive failed: {detail}',
   'card.dashboard.sessions.close_residual': '⚠️ **Closed locally, but the remote session was NOT cancelled**: `{taskId}` — manual cleanup required.',
   'card.dashboard.sessions.close_residual_local': '⚠️ **Closed locally, but a credentialed host subtree could NOT be proven terminated**: {taskId}. The remote session WAS cancelled — inspect the local host process.',
   'card.dashboard.sessions.session_not_found': '⚠️ Session not found or already cleaned up.',

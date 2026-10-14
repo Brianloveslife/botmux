@@ -3681,7 +3681,7 @@ export async function resumeSession(
   }
 
   try {
-    await restoreCodexCleanupArchive(session, sessionStore.updateSession);
+    await restoreCodexCleanupArchive(session, sessionStore.updateSession, undefined, () => sessionStore.getOwnedSession(sessionId));
   } catch (error) {
     logger.warn(`[resume] Codex unarchive failed for ${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
     return { ok: false as const, error: 'codex_unarchive_failed' as const };
