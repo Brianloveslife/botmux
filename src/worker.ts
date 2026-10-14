@@ -13172,8 +13172,24 @@ function markPromptReady(): void {
 }
 
 function persistCliSessionId(cliSessionId: string): void {
+  const cleanupBin = lastInitConfig && ['codex', 'codex-app'].includes(lastInitConfig.cliId)
+    // codex-app's adapter binary is the runner runtime, not the native Codex.
+    ? createCliAdapterSync('codex', lastInitConfig.cliPathOverride).resolvedBin
+    : undefined;
   const published = publishCliSessionIdToDaemon({
     cliSessionId,
+    // Snapshot only worker-owned, durable local Codex roots. Never infer an
+    // archive target from an adopted, remote, wrapper or scratch conversation.
+    ...(lastInitConfig && ['codex', 'codex-app'].includes(lastInitConfig.cliId) && cleanupBin
+      && !lastInitConfig.adoptMode && !lastInitConfig.existingAppServerEndpoint
+      && !lastInitConfig.wrapperCli && lastInitConfig.sandbox !== 'scratch'
+      && ['pty', 'tmux'].includes(lastInitConfig.backendType)
+      ? { codexCleanupTarget: {
+        threadId: cliSessionId,
+        codexBin: cleanupBin,
+        codexHome: lastInitConfig.cliInstanceBinding?.codexHome
+          ?? codexNativeTitleEnv(lastInitConfig).CODEX_HOME ?? join(homedir(), '.codex'),
+      } } : {}),
     sessionId,
     initConfig: lastInitConfig,
     turnId: currentBotmuxTurnId,

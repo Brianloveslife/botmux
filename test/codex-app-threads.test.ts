@@ -495,3 +495,37 @@ describe('setCodexAppThreadName', () => {
     throw new Error(`force-closed fake Codex app-server ${pid} was not reaped`);
   });
 });
+
+describe('Codex archive lifecycle RPC', () => {
+  async function probe(archived: boolean, storedArchived: boolean, behavior = 'success', outside = false) {
+    const { setCodexAppThreadArchived } = await import('../src/services/codex-app-threads.js');
+    const dir = mkdtempSync(join(tmpdir(), 'botmux-codex-archive-'));
+    tempDirs.push(dir);
+    const logPath = join(dir, 'requests.jsonl');
+    const env = fakeCodexEnv(dir, { FAKE_CODEX_LOG: logPath, FAKE_CODEX_BEHAVIOR: behavior,
+      FAKE_CODEX_THREAD_PATH: outside ? '/tmp/foreign/rollout.jsonl'
+        : join(dir, 'source-codex-home', storedArchived ? 'archived_sessions' : 'sessions', 'rollout.jsonl') });
+    const promise = setCodexAppThreadArchived({ threadId: 'native-thread', archived,
+      codexHome: env.CODEX_HOME!, codexBin: FAKE_CODEX, env, timeoutMs: 500 });
+    return { promise, requests: () => readFileSync(logPath, 'utf8').trim().split('\n').map(line => JSON.parse(line)) };
+  }
+  it.each([[true, false, 'thread/archive'], [false, true, 'thread/unarchive']] as const)(
+    'uses official RPC for archived=%s', async (archived, previous, method) => {
+      const p = await probe(archived, previous); await p.promise;
+      expect(p.requests().find(r => r.method === method)?.params).toEqual({ threadId: 'native-thread' });
+      expect(p.requests().some(r => r.method === 'thread/resume' || r.method === 'turn/start')).toBe(false);
+    });
+  it.each([true, false])('already in desired state is a no-op (%s)', async state => {
+    const p = await probe(state, state); await p.promise;
+    expect(p.requests().some(r => r.method === 'thread/archive' || r.method === 'thread/unarchive')).toBe(false);
+  });
+  it('rejects a foreign storage path before mutation', async () => {
+    const p = await probe(true, false, 'success', true);
+    await expect(p.promise).rejects.toThrow('outside the frozen session home');
+    expect(p.requests().some(r => r.method === 'thread/archive')).toBe(false);
+  });
+  it.each(['archive-error', 'hang-archive'])('propagates bounded RPC failure (%s)', async behavior => {
+    const p = await probe(true, false, behavior);
+    await expect(p.promise).rejects.toThrow();
+  });
+});

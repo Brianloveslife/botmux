@@ -945,6 +945,10 @@ export interface Session {
   whiteboardId?: string;
   /** CLI-native resume id when it differs from botmux's sessionId (for example Codex thread id). */
   cliSessionId?: string;
+  /** Worker-proven local Codex identity; absent on historical sessions. */
+  codexCleanupTarget?: { threadId: string; codexHome: string; codexBin: string };
+  /** Written before archive RPC; retained on uncertain failures for safe recovery. */
+  codexCleanupArchive?: { threadId: string; state: 'pending' | 'archived' };
   /**
    * A validated endpoint for an already-running Codex App Server that this
    * session is allowed to attach to. It is frozen with the session rather than
@@ -2025,7 +2029,7 @@ export type WorkerToDaemon =
       sessionId: string;
       activationToken: string;
     }
-  | { type: 'cli_session_id'; cliSessionId: string; turnId?: string; dispatchAttempt?: number }
+  | { type: 'cli_session_id'; codexCleanupTarget?: Session['codexCleanupTarget']; cliSessionId: string; turnId?: string; dispatchAttempt?: number }
   /** Executor-observed active runtime. Unlike the frozen Session launch config,
    * these fields follow in-session model and effort changes reported by the CLI. */
   | {

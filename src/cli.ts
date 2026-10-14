@@ -6627,6 +6627,8 @@ async function cmdResume(): Promise<void> {
     console.error('❌ 恢复过程中会话被关闭，本次 resume 已取消。');
   } else if (errCode === 'workspace_retired') {
     console.error('❌ 该会话的工作区已回收，无法恢复。请在有效工作区创建新会话。');
+  } else if (errCode === 'codex_unarchive_failed') {
+    console.error('❌ Codex 解除归档失败，会话保持 closed；请稍后重试恢复。');
   } else if (errCode === 'resume_start_failed') {
     console.error('❌ 远程后端恢复进程未能启动，会话已恢复为 closed；请稍后重试。');
   } else if (errCode === 'resume_reconciliation_required') {

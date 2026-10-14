@@ -3268,6 +3268,8 @@ export async function handleCardAction(data: CardActionData, deps: CardHandlerDe
           await sessionReply(rootId, t('card.action.resume_cancelled', undefined, locDsResume));
         } else if (result.error === 'workspace_retired') {
           await sessionReply(rootId, t('card.action.resume_workspace_retired', undefined, locDsResume));
+        } else if (result.error === 'codex_unarchive_failed') {
+          await sessionReply(rootId, t('card.action.resume_codex_unarchive_failed', undefined, locDsResume));
         } else if (result.error === 'resume_start_failed') {
           await sessionReply(rootId, t('card.action.resume_start_failed', undefined, locDsResume));
         } else if (result.error === 'resume_reconciliation_required') {

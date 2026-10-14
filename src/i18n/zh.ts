@@ -1130,6 +1130,7 @@ export const messages: Record<string, string> = {
   'card.action.resume_cancelled': '⚠️ 恢复过程中会话被关闭，本次恢复已取消。',
   'card.action.resume_workspace_retired': '该会话的工作区已回收，无法恢复。请在有效工作区创建新会话。',
   'card.action.resume_start_failed': '⚠️ 远程后端恢复进程未能启动，会话仍保持关闭，请稍后重试。',
+  'card.action.resume_codex_unarchive_failed': '⚠️ Codex 解除归档失败，会话保持关闭；请稍后重试恢复。',
   'card.action.resume_reconciliation_required': '⚠️ 远程恢复启动失败，且无法证明已回到关闭状态。会话保持保护状态，请先重试关闭或检查远端状态。',
   'card.action.primary_lifecycle_unavailable': '⚠️ 多副本持久模式暂不支持通过卡片关闭、恢复或重启会话。关闭请在话题内发送 `/close`；需要继续时请直接 @机器人创建新会话。',
   'card.action.disconnected': '⏏ 已断开，原 CLI 会话不受影响',
