@@ -42,6 +42,20 @@ Worker 退出仅表示进程结束，持久会话仍为 active 时，向 Dashboa
 
 原生路径校验先 realpath home 与 rollout，再检查文件位于 canonical home 的 sessions / archived_sessions 子树；支持软链接 home，同时拒绝文件或目录软链接逃逸。Worker 在实际启动时冻结 executable 的真实路径；codex-app 取 runner 参数中的原生 --codex-bin，RPC 引擎使用同一稳定路径，发布 thread ID 时不再重新解析 PATH 或临时 alias。
 
-卡片关闭仍立即 ACK，但归档进入按 session 串行的生命周期队列后先等待原 Worker 的成功退出 fence（exit code 0）；已有 session_close_ready 在 teardown 前发送，不能证明原生线程已释放；重开也排在同一队列内。不能证明释放时不发归档，归档失败保留恢复 journal 并提示。回归包含真实 closeSession + fake Worker、退出前无 RPC、退出后 archive/unarchive 顺序及 archive 失败后的恢复。
+卡片关闭仍立即 ACK，但归档进入按 session 串行的生命周期队列后先等待该关闭代的原生释放 ticket；session_close_ready 和 Worker exit code 0 均不能单独证明原生线程已释放；重开也排在同一队列内。不能证明释放时不发归档，归档失败保留恢复 journal 并提示。回归包含真实 closeSession + fake Worker、退出前无 RPC、退出后 archive/unarchive 顺序及 archive 失败后的恢复。
 
-同步上游 master 后，强化异常退出拒绝归档后，22 个完整相关测试文件 1128 项通过（包含已发送 kill 信号但尚未退出的 Worker）；覆盖归档/恢复、路径逃逸、临时 executable alias 删除、关闭命令/飞书路由、配置及其它 CLI 挂起，无测试名过滤。构建在隔离目录使用上游钉住的 Bun 1.4.3 和 Node 24，未部署或操作真实 Codex 会话。
+同步上游 master 后，强化异常退出拒绝归档后，24 个完整相关测试文件 1141 项通过（含原生延迟退出、gate 代际替换、超时和无证明退出）；覆盖归档/恢复、路径逃逸、临时 executable alias 删除、关闭命令/飞书路由、配置及其它 CLI 挂起，无测试名过滤。构建在隔离目录使用上游钉住的 Bun 1.4.3 和 Node 24，未部署或操作真实 Codex 会话。
+
+
+## 原生释放凭据补全
+
+Worker 的 exit code 0 只能证明包装进程退出，不能证明 detached app-server 已释放。显式关闭现在先捕获属于该次启动的 CLI / RPC 原生进程树及进程出生身份，保持 Worker 存活、有界 await RPC stop 和原生进程退出；原生进程退出前不会发送释放证明。丢失、异常、超时或无法读取身份时 fail closed。延迟强杀计时器随原生子进程退出清除，不对已退出的 PID 补发信号。
+
+Daemon 在 pool 实际选择本次关闭对象时生成 session/thread/workerGeneration/nonce 绑定的 ticket，仅接受该 IPC 子进程的匹配证明；干净 Worker exit、旧代或错误 nonce 都不能授权归档。IPC 在 mutation gate 内调用 pool 并获取 ticket，避免 gate 等待期间旧→新或无→新 Worker 的快照过时。卡片仍不 await teardown，归档与重开使用同一生命周期串行队列。
+
+验证过的释放凭据随 pending / archived journal 保存，允许已确认释放后的 RPC 失败重试与幂等关闭；旧 pending 记录或当前无 Worker 且无法证明原生释放的记录不推测凭据，只提示并拒绝归档。历史归档的显式恢复规则保留。所有生产归档入口均由 service 校验凭据，不允许无证明的新归档。
+
+新增真实 CodexRpcEngine + 延迟 1.5 秒退出的 fake app-server，以及真实 IPC / mutation gate 的代际替换回归；覆盖正常证明、异常/超时/无证明、重复关闭、过期代与并发重开。仅 fake 原生进程，无真实会话操作。
+
+
+本轮验证使用 `bun run test` 显式列出 24 个完整相关测试文件并设置 `--maxWorkers=3`，无 `-t` 过滤，1141 项全部通过；`bun run build` 在 Node 24 / Bun 1.4.3 隔离目录执行。覆盖原生 RPC、释放票据、真实 IPC/gate、session 恢复、命令与卡片、配置和其它 CLI 挂起路径。本轮未部署，未操作真实会话。

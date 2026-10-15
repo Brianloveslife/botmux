@@ -1,3 +1,4 @@
+import { nativeReleaseWorker } from './helpers/codex-cleanup-release.js';
 import { EventEmitter } from 'node:events';
 import * as globalConfig from '../src/global-config.js';
 import { setCodexAppThreadArchived } from '../src/services/codex-app-threads.js';
@@ -74,8 +75,11 @@ describe('/close card delivery through the real session lifecycle', () => {
     Object.assign(f.ds.session, { cliId: 'codex', backendType: 'pty', cliSessionId: 'mock-native',
       codexCleanupTarget: { threadId: 'mock-native', codexHome: '/tmp/mock-home', codexBin: '/tmp/mock-bin' } });
     sessionStore.updateSession(f.ds.session);
+    f.ds.worker = nativeReleaseWorker() as any; f.ds.initConfig = { backendType: 'pty' } as any;
     vi.spyOn(globalConfig, 'readGlobalConfig').mockReturnValue({ sessionCleanup: { archiveCodex: enabled } });
+    const nativeWorker = f.ds.worker as any;
     await f.close();
+    if (!enabled) expect(nativeWorker.send.mock.calls[0]?.[0]?.codexCleanupRelease).toBeUndefined();
     expect(f.ds.session.status).toBe('closed');
     if (enabled) {
       expect(setCodexAppThreadArchived).toHaveBeenCalledWith(expect.objectContaining({ archived: true }));
@@ -89,6 +93,7 @@ describe('/close card delivery through the real session lifecycle', () => {
     Object.assign(f.ds.session, { cliId: 'codex', backendType: 'pty', cliSessionId: 'mock-native',
       codexCleanupTarget: { threadId: 'mock-native', codexHome: '/tmp/mock-home', codexBin: '/tmp/mock-bin' } });
     sessionStore.updateSession(f.ds.session);
+    f.ds.worker = nativeReleaseWorker() as any; f.ds.initConfig = { backendType: 'pty' } as any;
     vi.spyOn(globalConfig, 'readGlobalConfig').mockReturnValue({ sessionCleanup: { archiveCodex: true } });
     vi.mocked(setCodexAppThreadArchived).mockRejectedValueOnce(new Error('mock RPC failed'));
     await f.close();
@@ -100,6 +105,7 @@ describe('/close card delivery through the real session lifecycle', () => {
     Object.assign(f.ds.session, { cliId: 'codex', backendType: 'pty', cliSessionId: 'mock-native',
       codexCleanupTarget: { threadId: 'mock-native', codexHome: '/tmp/mock-home', codexBin: '/tmp/mock-bin' } });
     sessionStore.updateSession(f.ds.session);
+    f.ds.worker = nativeReleaseWorker() as any; f.ds.initConfig = { backendType: 'pty' } as any;
     vi.spyOn(globalConfig, 'readGlobalConfig').mockReturnValue({ sessionCleanup: { archiveCodex: true } });
     let release!: () => void;
     const gate = new Promise<void>(resolve => { release = resolve; });
@@ -123,7 +129,7 @@ describe('/close card delivery through the real session lifecycle', () => {
     Object.assign(f.ds.session, { cliId: 'codex', backendType: 'pty', cliSessionId: 'mock-native',
       codexCleanupTarget: { threadId: 'mock-native', codexHome: '/tmp/mock-home', codexBin: '/tmp/mock-bin' } });
     sessionStore.updateSession(f.ds.session);
-    const worker = Object.assign(new EventEmitter(), { killed: false, send: vi.fn(), kill: vi.fn() });
+    const worker = Object.assign(new EventEmitter(), { killed: false, send: vi.fn((..._args: any[]) => {}), kill: vi.fn() });
     f.ds.worker = worker as any;
     f.ds.initConfig = { backendType: 'pty' } as any;
     vi.spyOn(globalConfig, 'readGlobalConfig').mockReturnValue({ sessionCleanup: { archiveCodex: true } });
@@ -144,6 +150,8 @@ describe('/close card delivery through the real session lifecycle', () => {
         () => sessionStore.getOwnedSession(f.ds.session.sessionId));
       await new Promise(resolve => setImmediate(resolve));
       expect(nativeCalls).toEqual([]);
+      const request = worker.send.mock.calls[0]?.[0] as any;
+      worker.emit('message', { type: 'codex_cleanup_released', ...request.codexCleanupRelease, released: true });
       worker.emit('exit', 0, null);
       await reopen;
       expect(nativeCalls).toEqual([true, false]);
@@ -157,7 +165,7 @@ describe('/close card delivery through the real session lifecycle', () => {
     Object.assign(f.ds.session, { cliId: 'codex', backendType: 'pty', cliSessionId: 'mock-native',
       codexCleanupTarget: { threadId: 'mock-native', codexHome: '/tmp/mock-home', codexBin: '/tmp/mock-bin' } });
     sessionStore.updateSession(f.ds.session);
-    const worker = Object.assign(new EventEmitter(), { killed: false, send: vi.fn(), kill: vi.fn() });
+    const worker = Object.assign(new EventEmitter(), { killed: false, send: vi.fn((..._args: any[]) => {}), kill: vi.fn() });
     f.ds.worker = worker as any; f.ds.initConfig = { backendType: 'pty' } as any;
     vi.spyOn(globalConfig, 'readGlobalConfig').mockReturnValue({ sessionCleanup: { archiveCodex: true } });
     const notify = vi.fn(async () => undefined);
@@ -166,7 +174,7 @@ describe('/close card delivery through the real session lifecycle', () => {
         awaitWorkerExit: false, explicitClose: true, onArchiveError: notify,
       })).ok).toBe(true);
       worker.emit('exit', null, 'SIGKILL');
-      await vi.waitFor(() => expect(notify).toHaveBeenCalledWith('codex_worker_teardown_unverified'));
+      await vi.waitFor(() => expect(notify).toHaveBeenCalledWith('codex_native_release_unverified'));
       expect(setCodexAppThreadArchived).not.toHaveBeenCalled();
       expect(sessionStore.getOwnedSession(f.ds.session.sessionId)?.codexCleanupArchive).toBeUndefined();
     } finally { worker.emit('exit', 0, null); }
@@ -176,6 +184,7 @@ describe('/close card delivery through the real session lifecycle', () => {
     Object.assign(f.ds.session, { cliId: 'codex', backendType: 'pty', cliSessionId: 'mock-native',
       codexCleanupTarget: { threadId: 'mock-native', codexHome: '/tmp/mock-home', codexBin: '/tmp/mock-bin' } });
     sessionStore.updateSession(f.ds.session);
+    f.ds.worker = nativeReleaseWorker() as any; f.ds.initConfig = { backendType: 'pty' } as any;
     vi.spyOn(globalConfig, 'readGlobalConfig').mockReturnValue({ sessionCleanup: { archiveCodex: true } });
     await workerPool.closeSession(f.ds.session.sessionId);
     expect(setCodexAppThreadArchived).not.toHaveBeenCalled();

@@ -1,10 +1,16 @@
+import { mockCleanupRelease } from './helpers/codex-cleanup-release.js';
+import { captureCodexCleanupRelease } from '../src/services/codex-cleanup-release.js';
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import type { Session } from '../src/types.js';
-import { archiveCodexForCleanup, restoreCodexCleanupArchive, captureCodexCleanupWorkerExit } from '../src/services/codex-cleanup-archive.js';
+import { archiveCodexForCleanup as archiveImpl, restoreCodexCleanupArchive } from '../src/services/codex-cleanup-archive.js';
 import { cleanupIdleSessions } from '../src/dashboard/session-cleanup.js';
 import { runAutoCleanupTick } from '../src/dashboard/auto-cleanup.js';
 
+function archiveCodexForCleanup(...args: Parameters<typeof archiveImpl>) {
+  args[4] ??= async () => mockCleanupRelease(args[0]);
+  return archiveImpl(...args);
+}
 function session(patch: Partial<Session> = {}): Session {
   return { sessionId: 'local', status: 'closed', cliId: 'codex', backendType: 'tmux',
     cliSessionId: 'native', codexCleanupTarget: { threadId: 'native', codexHome: '/tmp/codex-home', codexBin: '/tmp/fake-codex' },
@@ -50,7 +56,7 @@ describe('Codex idle cleanup archive journal', () => {
     const row = session({ ownerOpenId: 'ou_owner' }); const states: unknown[] = [];
     const persist = () => states.push(structuredClone(row.codexCleanupArchive));
     const rpc = vi.fn(async opts => {
-      expect(states).toEqual([{ threadId: 'native', state: 'pending' }]);
+      expect(states).toMatchObject([{ threadId: 'native', state: 'pending' }]);
       expect(opts.env).toMatchObject({ CODEX_HOME: '/tmp/codex-home', BOTMUX_OWNER_OPEN_ID: 'ou_owner', __OWNER_OPEN_ID: 'ou_owner' });
     });
     await archiveCodexForCleanup(row, true, persist, rpc);
@@ -112,17 +118,25 @@ describe('Codex idle cleanup archive journal', () => {
     expect(row.codexCleanupArchive).toBeUndefined();
   });
 
-  it('a sent kill signal does not prove that the original Worker has exited', async () => {
-    const worker = Object.assign(new EventEmitter(), { killed: true, exitCode: null, signalCode: null });
-    const fence = captureCodexCleanupWorkerExit(worker as unknown as import('node:child_process').ChildProcess);
-    expect(fence).toBeInstanceOf(Promise);
-    let released = false;
-    void fence!.then(() => { released = true; });
-    await Promise.resolve();
-    expect(released).toBe(false);
+  it('Worker exit 0 without native-release proof is rejected', async () => {
+    const worker = Object.assign(new EventEmitter(), { killed: false, exitCode: null, signalCode: null });
+    const ticket = captureCodexCleanupRelease(worker as any,
+      { sessionId: 'test', threadId: 'native', workerGeneration: 1 });
     worker.emit('exit', 0, null);
-    await fence;
-    expect(released).toBe(true);
+    await expect(ticket.released).rejects.toThrow('codex_native_release_unverified');
+  });
+
+  it('requires proof for a fresh archive even when there is no live Worker', async () => {
+    const rpc = vi.fn();
+    expect(await archiveImpl(session(), true, vi.fn(), rpc)).toBe('codex_native_release_unverified');
+    expect(rpc.mock.calls.length).toBe(0);
+  });
+
+  it('rejects a release receipt from another Worker generation', async () => {
+    const row = session({ workerGeneration: 2 }); const rpc = vi.fn();
+    expect(await archiveImpl(row, true, vi.fn(), rpc, async () => mockCleanupRelease(row)))
+      .toBe('codex_native_release_unverified');
+    expect(rpc.mock.calls.length).toBe(0);
   });
 
 });

@@ -1,3 +1,4 @@
+import type { CodexCleanupReleaseTicket } from '../services/codex-cleanup-release.js';
 import { readTurnRegistration } from './trigger-registration.js';
 import { lookupTurnResultRequest } from './turn-result-routes.js';
 import { normalizeCalendarBinding, normalizeCalendarDayType, listWorkCalendars, previewTaskCalendar } from '../services/work-calendar.js';
@@ -154,7 +155,7 @@ import {
 import { setDefaultLocale, localeForBot, t } from '../i18n/index.js';
 import { isLocale, type Locale } from '../i18n/types.js';
 import { readGlobalConfig } from '../global-config.js';
-import { archiveCodexForCleanup, captureCodexCleanupWorkerExit, ownedLocalCodex } from '../services/codex-cleanup-archive.js';
+import { archiveCodexForCleanup } from '../services/codex-cleanup-archive.js';
 import {
   clearChatReplyMode,
   getChatReplyModeState,
@@ -1707,9 +1708,10 @@ ipcRoute('POST', '/api/sessions/:sessionId/close', async (req, res, params) => {
   if (!auth.ok) return jsonRes(res, 403, { ok: false, error: auth.error });
   const initial = findSessionRecord(params.sessionId);
   const initiallyClosed = initial?.status === 'closed';
-  const closeArchiveOwner = ds?.session ?? initial;
-  const codexArchiveReleaseFence = closeArchiveOwner && ownedLocalCodex(closeArchiveOwner)
-    ? captureCodexCleanupWorkerExit(ds?.worker) : undefined;
+  let codexArchiveReleaseTicket: CodexCleanupReleaseTicket | undefined;
+  const closeCurrentGeneration = () => closeSession(params.sessionId, {
+    onCodexCleanupRelease: ticket => { codexArchiveReleaseTicket = ticket; },
+  });
   const cleanupSource = body.idleCleanupSource === 'manual' ? 'manual'
     : body.idleCleanupSource === 'scheduled' ? 'scheduled' : 'unspecified';
   logger.info(`[session-close] session=${params.sessionId} intent=${body.idleCleanup === true ? `idle_cleanup:${cleanupSource}` : 'explicit_close'}`);
@@ -1718,7 +1720,7 @@ ipcRoute('POST', '/api/sessions/:sessionId/close', async (req, res, params) => {
     if (!row) return;
     const enabled = readGlobalConfig().sessionCleanup?.archiveCodex === true;
     const error = await archiveCodexForCleanup(row, enabled, sessionStore.updateSession, undefined,
-      async () => { await codexArchiveReleaseFence; });
+      async () => codexArchiveReleaseTicket?.released);
     const outcome = error === 'codex_archive_target_unverified' || error === 'codex_archive_target_invalid'
       ? error : error ? 'rpc_failed' : !enabled ? 'disabled'
         : row.codexCleanupArchive?.state === 'archived' ? 'archived' : 'not_applicable';
@@ -1732,7 +1734,7 @@ ipcRoute('POST', '/api/sessions/:sessionId/close', async (req, res, params) => {
   // closeSession is idempotent and reports alreadyClosed.
   const larkAppId = ds?.larkAppId || initial?.larkAppId || cachedLarkAppId;
   if (!larkAppId) {
-    const r = await closeSession(params.sessionId);
+    const r = await closeCurrentGeneration();
     const archiveError = r.ok && (!initiallyClosed || initial?.codexCleanupArchive) ? await cleanupArchive() : undefined;
     return jsonRes(res, r.ok ? 200 : 502, { ...r, ...(archiveError ? { archiveError } : {}) });
   }
@@ -1753,7 +1755,7 @@ ipcRoute('POST', '/api/sessions/:sessionId/close', async (req, res, params) => {
         ? { ok: true, outcome: 'closed_with_residual', residual, alreadyClosed: true }
         : { ok: true, outcome: 'closed', alreadyClosed: true });
     }
-    const r = await closeSession(params.sessionId);
+    const r = await closeCurrentGeneration();
     const archiveError = r.ok ? await cleanupArchive() : undefined;
     jsonRes(res, r.ok ? 200 : 502, { ...r, ...(archiveError ? { archiveError } : {}) });
   });

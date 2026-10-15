@@ -1,3 +1,5 @@
+import { mockCleanupRelease } from './helpers/codex-cleanup-release.js';
+import { captureCodexCleanupRelease } from '../src/services/codex-cleanup-release.js';
 import { EventEmitter } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { startIpcServer, type IpcServerHandle } from '../src/core/dashboard-ipc-server.js';
@@ -26,7 +28,14 @@ async function close(idleCleanup: boolean, enabled: boolean, patch: Partial<Sess
   vi.spyOn(store, 'getOwnedSession').mockReturnValue(row);
   vi.spyOn(store, 'updateSession').mockImplementation(() => {});
   vi.spyOn(globalConfig, 'readGlobalConfig').mockReturnValue({ sessionCleanup: { archiveCodex: enabled } });
-  vi.spyOn(pool, 'closeSession').mockImplementation(async () => { row.status = 'closed'; return { ok: true, alreadyClosed: false, outcome: 'closed' } as any; });
+  vi.spyOn(pool, 'closeSession').mockImplementation(async (_id, opts) => {
+    row.status = 'closed';
+    const ticket = worker ? captureCodexCleanupRelease(worker, { sessionId: row.sessionId, threadId: row.cliSessionId!, workerGeneration: 1 })
+      : { request: mockCleanupRelease(row), released: Promise.resolve(mockCleanupRelease(row)) };
+    (worker as any)?.once('review-native-released', () => worker.emit('message', { type: 'codex_cleanup_released', ...ticket.request, released: true }));
+    opts?.onCodexCleanupRelease?.(ticket);
+    return { ok: true, alreadyClosed: false, outcome: 'closed' } as any;
+  });
   if (fail) vi.mocked(setCodexAppThreadArchived).mockRejectedValueOnce(new Error('mock archive error'));
   else vi.mocked(setCodexAppThreadArchived).mockResolvedValue(undefined);
   handle = await startIpcServer({ port: 0, host: '127.0.0.1' });
@@ -76,7 +85,7 @@ describe('daemon close idle-cleanup intent', () => {
     expect(setCodexAppThreadArchived).not.toHaveBeenCalled();
   });
   it('retries pending explicit close and skips an already archived journal', async () => {
-    await close(false, true, { status: 'closed', codexCleanupArchive: { threadId: 'mock-native', state: 'pending' } });
+    await close(false, true, { status: 'closed', codexCleanupArchive: { threadId: 'mock-native', state: 'pending', release: mockCleanupRelease({ sessionId: 'mock-cleanup', cliSessionId: 'mock-native' }) } });
     expect(setCodexAppThreadArchived).toHaveBeenCalledOnce();
     await handle?.close(); handle = undefined;
     vi.mocked(setCodexAppThreadArchived).mockClear();
@@ -90,14 +99,21 @@ describe('daemon close idle-cleanup intent', () => {
     try {
       await vi.waitFor(() => expect(pool.closeSession).toHaveBeenCalled());
       expect(setCodexAppThreadArchived).not.toHaveBeenCalled();
+      if (!abnormal) worker.emit('review-native-released');
       worker.emit('exit', abnormal ? null : 0, abnormal ? 'SIGKILL' : null);
       const result = await closing;
       expect(result.body.ok).toBe(true);
       if (abnormal) {
-        expect(result.body.archiveError).toBe('codex_worker_teardown_unverified');
+        expect(result.body.archiveError).toBe('codex_native_release_unverified');
         expect(setCodexAppThreadArchived).not.toHaveBeenCalled();
       } else expect(setCodexAppThreadArchived).toHaveBeenCalledOnce();
     } finally { worker.emit('exit', 0, null); await closing; }
+  });
+
+  it('does not infer release for a legacy pending journal', async () => {
+    const result = await close(false, true, { status: 'closed', codexCleanupArchive: { threadId: 'mock-native', state: 'pending' } });
+    expect(result.body.archiveError).toBe('codex_native_release_unverified');
+    expect(vi.mocked(setCodexAppThreadArchived).mock.calls.length).toBe(0);
   });
 
 });

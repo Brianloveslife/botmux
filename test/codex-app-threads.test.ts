@@ -1,3 +1,4 @@
+import { mockCleanupRelease } from './helpers/codex-cleanup-release.js';
 import { freezeCodexCleanupLaunch } from '../src/core/codex-cleanup-launch.js';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, symlinkSync, realpathSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -554,7 +555,7 @@ describe('Codex archive lifecycle RPC', () => {
       cliSessionId: opts.threadId, codexCleanupTarget: { threadId: opts.threadId, codexHome: opts.codexHome, codexBin: frozenBin } } as import('../src/types.js').Session;
     const rpc: typeof setCodexAppThreadArchived = request => setCodexAppThreadArchived({ ...request,
       env: { ...request.env, ...env, FAKE_CODEX_THREAD_PATH: join(env.CODEX_HOME!, request.archived ? 'sessions' : 'archived_sessions', 'rollout.jsonl') } });
-    expect(await archiveCodexForCleanup(row, true, () => {}, rpc)).toBeUndefined();
+    expect(await archiveCodexForCleanup(row, true, () => {}, rpc, async () => mockCleanupRelease(row))).toBeUndefined();
     expect(row.codexCleanupArchive?.state).toBe('archived');
     unlinkSync(alias);
     await expect(restoreCodexCleanupArchive(row, () => {}, rpc)).resolves.toBeUndefined();

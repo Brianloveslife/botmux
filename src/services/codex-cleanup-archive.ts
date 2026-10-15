@@ -1,23 +1,8 @@
-import type { ChildProcess } from 'node:child_process';
+import type { CodexCleanupRelease } from './codex-cleanup-release.js';
 import { isAbsolute } from 'node:path';
 import type { Session } from '../types.js';
 import { applySessionOwnerEnv } from '../utils/child-env.js';
 import { setCodexAppThreadArchived } from './codex-app-threads.js';
-
-/** The existing session_close_ready ACK precedes CLI teardown. Archive must
- * wait for the original Worker to finish cleanly, including across IPC closes. */
-export function captureCodexCleanupWorkerExit(worker?: ChildProcess | null): Promise<void> | undefined {
-  if (!worker) return;
-  const fence = new Promise<void>((resolve, reject) => {
-    const exited = (code: number | null) => code === 0
-      ? resolve() : reject(new Error('codex_worker_teardown_unverified'));
-    if (worker.exitCode != null || worker.signalCode != null) exited(worker.exitCode);
-    else worker.once('exit', exited);
-  });
-  // Exit can happen before local close cleanup reaches the lifecycle queue.
-  void fence.catch(() => undefined);
-  return fence;
-}
 
 export function ownedLocalCodex(session: Session): boolean {
   return (session.cliId === 'codex' || session.cliId === 'codex-app')
@@ -42,7 +27,7 @@ type ArchiveRpc = typeof setCodexAppThreadArchived;
  * so a timeout/crash never loses the obligation to unarchive on reopen. */
 async function archiveCodexForCleanupImpl(
   session: Session, enabled: boolean, persist: Persist,
-  rpc: ArchiveRpc = setCodexAppThreadArchived,
+  rpc: ArchiveRpc = setCodexAppThreadArchived, beforeArchive?: () => Promise<CodexCleanupRelease | undefined>,
 ): Promise<string | undefined> {
   if (!enabled || session.status !== 'closed' || !ownedLocalCodex(session)) return;
   // A successful local close must never imply native archive success when the
@@ -52,12 +37,17 @@ async function archiveCodexForCleanupImpl(
   if (session.codexCleanupArchive?.state === 'archived') return;
   const target = session.codexCleanupTarget!;
   try {
-    session.codexCleanupArchive = { threadId: target.threadId, state: 'pending' };
+    const release = session.codexCleanupArchive?.release ?? await beforeArchive?.();
+    if (!release || release.sessionId !== session.sessionId || release.threadId !== target.threadId
+        || !Number.isSafeInteger(release.workerGeneration) || release.workerGeneration < 0
+        || (session.workerGeneration !== undefined && session.workerGeneration !== release.workerGeneration)
+        || typeof release.nonce !== 'string' || release.nonce.length < 16) return 'codex_native_release_unverified';
+    session.codexCleanupArchive = { threadId: target.threadId, state: 'pending', release };
     persist(session);
     const env = { ...process.env, CODEX_HOME: target.codexHome };
     applySessionOwnerEnv(env, session.ownerOpenId);
     await rpc({ ...target, archived: true, env });
-    session.codexCleanupArchive = { threadId: target.threadId, state: 'archived' };
+    session.codexCleanupArchive = { threadId: target.threadId, state: 'archived', release };
     persist(session);
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
@@ -92,12 +82,8 @@ function serialized<T>(id: string, action: () => Promise<T>): Promise<T> {
   return next;
 }
 export function archiveCodexForCleanup(session: Session, enabled: boolean, persist: Persist,
-  rpc: ArchiveRpc = setCodexAppThreadArchived, beforeArchive?: () => Promise<void>): Promise<string | undefined> {
-  return serialized(session.sessionId, async () => {
-    try { if (enabled && session.status === 'closed' && ownedLocalCodex(session)) await beforeArchive?.(); }
-    catch (error) { return error instanceof Error ? error.message : String(error); }
-    return archiveCodexForCleanupImpl(session, enabled, persist, rpc);
-  });
+  rpc: ArchiveRpc = setCodexAppThreadArchived, beforeArchive?: () => Promise<CodexCleanupRelease | undefined>): Promise<string | undefined> {
+  return serialized(session.sessionId, () => archiveCodexForCleanupImpl(session, enabled, persist, rpc, beforeArchive));
 }
 export function restoreCodexCleanupArchive(session: Session, persist: Persist,
   rpc: ArchiveRpc = setCodexAppThreadArchived, reload?: () => Session | undefined): Promise<void> {

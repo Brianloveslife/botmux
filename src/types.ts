@@ -948,7 +948,7 @@ export interface Session {
   /** Worker-proven local Codex identity; absent on historical sessions. */
   codexCleanupTarget?: { threadId: string; codexHome: string; codexBin: string };
   /** Written before archive RPC; retained on uncertain failures for safe recovery. */
-  codexCleanupArchive?: { threadId: string; state: 'pending' | 'archived' };
+  codexCleanupArchive?: { threadId: string; state: 'pending' | 'archived'; release?: import('./services/codex-cleanup-release.js').CodexCleanupRelease };
   /**
    * A validated endpoint for an already-running Codex App Server that this
    * session is allowed to attach to. It is frozen with the session rather than
@@ -1808,7 +1808,7 @@ type DaemonToWorkerBase =
    *  as a model turn. Only adapters declaring buildSessionRenameCommand handle
    *  it; all other CLIs ignore it. */
   | { type: 'rename_session'; title: string }
-  | { type: 'close'; requestId?: string }
+  | { type: 'close'; requestId?: string; codexCleanupRelease?: import('./services/codex-cleanup-release.js').CodexCleanupRelease }
   | { type: 'close_commit'; requestId: string }
   | { type: 'close_abort'; requestId: string }
   /** Fence new remote writes, drain accepted writes, and report exact lineage. */
@@ -2084,6 +2084,7 @@ export type WorkerToDaemon =
   }
   /** Worker-side close handler has crossed the point where it will no longer
    * read bridge send markers or emit transcript fallback for this session. */
+  | ({ type: 'codex_cleanup_released'; released: boolean } & import('./services/codex-cleanup-release.js').CodexCleanupRelease)
   | { type: 'session_close_ready'; sessionId: string }
   | {
       type: 'task_continuation_rpc_status';
