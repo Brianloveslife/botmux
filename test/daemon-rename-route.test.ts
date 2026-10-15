@@ -1312,7 +1312,7 @@ describe('/rename production routing — must not pre-create a session (review P
       larkAppId: APP,
     });
 
-    expect(mocks.closeWorkerPoolSession).toHaveBeenCalledWith(ds.session.sessionId);
+    expect(mocks.closeWorkerPoolSession).toHaveBeenCalledWith(ds.session.sessionId, expect.objectContaining({ explicitClose: true, onArchiveError: expect.any(Function) }));
     expect(activeSessions.has(sessionKey(CHAT, APP))).toBe(false);
     expect(mocks.replyMessage.mock.calls[0]?.slice(0, 5)).toEqual([
       APP,
@@ -1382,7 +1382,7 @@ describe('/rename production routing — must not pre-create a session (review P
       larkAppId: APP,
     });
 
-    expect(mocks.closeWorkerPoolSession).toHaveBeenCalledWith(ds.session.sessionId);
+    expect(mocks.closeWorkerPoolSession).toHaveBeenCalledWith(ds.session.sessionId, expect.objectContaining({ explicitClose: true, onArchiveError: expect.any(Function) }));
     expect(activeSessions.has(sessionKey(CHAT, APP))).toBe(false);
     expect(mocks.replyMessage.mock.calls[0]?.slice(0, 5)).toEqual([
       APP,
@@ -1407,7 +1407,7 @@ describe('/rename production routing — must not pre-create a session (review P
       replyRootId: topicRoot,
     });
 
-    expect(mocks.closeWorkerPoolSession).toHaveBeenCalledWith(ds.session.sessionId);
+    expect(mocks.closeWorkerPoolSession).toHaveBeenCalledWith(ds.session.sessionId, expect.objectContaining({ explicitClose: true, onArchiveError: expect.any(Function) }));
     expect(activeSessions.has(sessionKey(topicRoot, APP))).toBe(false);
     expect(mocks.replyMessage.mock.calls[0]?.slice(0, 5)).toEqual([
       APP,

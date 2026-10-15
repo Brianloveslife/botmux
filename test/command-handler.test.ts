@@ -2670,7 +2670,7 @@ describe('handleCommand', () => {
         '/home/testuser/project-wt-principal',
         'wt/principal-lane-b',
       );
-      expect(closeWorkerPoolSession).toHaveBeenCalledWith('lane-session-b');
+      expect(closeWorkerPoolSession).toHaveBeenCalledWith('lane-session-b', expect.objectContaining({ explicitClose: true, onArchiveError: expect.any(Function) }));
       expect(sessionStore.retirePrincipalLane).toHaveBeenNthCalledWith(1, expect.objectContaining({ dryRun: true }));
       expect(sessionStore.retirePrincipalLane).toHaveBeenNthCalledWith(2, expect.not.objectContaining({ dryRun: true }));
       expect(removeRepoWorktree).toHaveBeenCalledWith(
@@ -2751,7 +2751,7 @@ describe('handleCommand', () => {
       );
 
       expect(pushWorktreeBranch).toHaveBeenCalledTimes(1);
-      expect(closeWorkerPoolSession).toHaveBeenCalledWith('lane-session-b');
+      expect(closeWorkerPoolSession).toHaveBeenCalledWith('lane-session-b', expect.objectContaining({ explicitClose: true, onArchiveError: expect.any(Function) }));
       expect(sessionStore.retirePrincipalLane).toHaveBeenCalledTimes(1);
       expect(sessionStore.retirePrincipalLane).toHaveBeenCalledWith(expect.objectContaining({ dryRun: true }));
       expect(removeRepoWorktree).not.toHaveBeenCalled();
@@ -3418,7 +3418,7 @@ describe('handleCommand', () => {
 
       await handleCommand('/close', ROOT_ID, makeLarkMessage('/close'), deps, LARK_APP_ID);
 
-      expect(closeSession).toHaveBeenCalledWith('sess-001');
+      expect(closeSession).toHaveBeenCalledWith('sess-001', expect.objectContaining({ explicitClose: true, onArchiveError: expect.any(Function) }));
       expect(deps.activeSessions.get(sessionKey(ROOT_ID, LARK_APP_ID))).toBe(ds);
       expect(killWorker).not.toHaveBeenCalled();
       expect(sessionStore.closeSession).not.toHaveBeenCalled();
@@ -3452,7 +3452,7 @@ describe('handleCommand', () => {
 
       await handleCommand('/close', ROOT_ID, makeLarkMessage('/close'), deps, LARK_APP_ID);
 
-      expect(closeSession).toHaveBeenCalledWith('sess-001');
+      expect(closeSession).toHaveBeenCalledWith('sess-001', expect.objectContaining({ explicitClose: true, onArchiveError: expect.any(Function) }));
       // Active record kept so the close is retryable.
       expect(deps.activeSessions.get(sessionKey(ROOT_ID, LARK_APP_ID))).toBe(ds);
       // The "session closed" card must NOT be delivered.
@@ -3514,7 +3514,7 @@ describe('handleCommand', () => {
       }));
 
       const closing = handleCommand('/close', ROOT_ID, makeLarkMessage('/close'), deps, LARK_APP_ID);
-      await vi.waitFor(() => expect(closeSession).toHaveBeenCalledWith('sess-001'));
+      await vi.waitFor(() => expect(closeSession).toHaveBeenCalledWith('sess-001', expect.objectContaining({ explicitClose: true, onArchiveError: expect.any(Function) })));
 
       const replacement = makeDaemonSession();
       replacement.session = {
