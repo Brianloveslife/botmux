@@ -121,8 +121,6 @@ export const messages: Record<string, string> = {
   'card.repo.worktree_rolled_back': 'Worktree creation failed on {repo}: {error}. Rolled back {count} worktree(s) already created in this batch.',
   'card.repo.toast_worktree_creating': 'Creating worktree — will post in the thread when done…',
 
-  // Platform team hall check-in (bot-only group, visible to bots only)
-  'platform.hall_announce': '🤖 Team check-in: this bot is online (registers its union_id, no reply needed)',
 
   // In-group authorization card
   'card.grant.title': '🔑 Access Request',
@@ -318,6 +316,12 @@ export const messages: Record<string, string> = {
   'card.tui.input_placeholder': 'Type a custom reply…',
 
   // ─── Command responses ───────────────────────────────────────────────────
+  'cmd.queue.usage': 'Usage: /queue <text message> (multiline plain text supported; rich text and attachments are not supported yet)',
+  'cmd.queue.unsupported': '/queue currently supports Codex App sessions only.',
+  'cmd.queue.not_ready': 'Session is not ready. Start the session before retrying /queue.',
+  'cmd.queue.accepted': 'Accepted: runs as a separate turn after the active task, or starts immediately when idle.',
+  'cmd.queue.identity_window': 'Later messages during the wait may invalidate this turn’s bytedcli/lark-cli identity. If a turn mismatch is reported, resend the task.',
+  'cmd.queue.failed': 'Message was not queued. Please retry later.',
   'cmd.no_active_session': 'No active session in this topic.',
   'cmd.close.tag_updated': '🏷️ This chat is now in “{name}”.',
   'cmd.close.tag_failed': '⚠️ The session is closed, but its tag update did not complete. The chat and history are kept; check tag authorization or adjust the groups manually.',
@@ -367,11 +371,15 @@ export const messages: Record<string, string> = {
   'cmd.card.private_no_audience': '🔒 No audience: this bot has no owner configured (allowedUsers is empty).',
   'cmd.card.private_failed': '🔒 Failed to send the private card — likely missing send permission, the bot is not in this chat, or this is a topic group.',
   'cmd.card.private_partial': '🔒 Private card sent to {sent}/{total}; some recipients failed.',
-  'cmd.reply_mode.status': 'Current group reply mode: {mode}\nCommands: /reply-mode chat | chat-topic | topic | new-topic (shared remains a compatibility alias for topic)',
+  'cmd.reply_mode.status_inherited': 'Current group reply mode: {mode} (inherits the bot default)\nCommands: /reply-mode inherit | chat | chat-topic | topic | new-topic (shared remains a compatibility alias for topic)',
+  'cmd.reply_mode.status_override': 'Current group reply mode: {mode} (group override; bot default: {default})\nCommands: /reply-mode inherit | chat | chat-topic | topic | new-topic (inherit = clear this group override and follow the bot default)',
   'cmd.reply_mode.updated': '✅ Group reply mode updated to: {mode}',
+  'cmd.reply_mode.inherited': '✅ Group override cleared; now following the bot default: {default}',
+  'cmd.reply_mode.already_inherited': 'ℹ️ This group has no override; already following the bot default: {default}',
+  'cmd.reply_mode.chat_mode_unconfirmed': '⚠️ Could not confirm this chat type right now (Lark API did not respond); nothing changed, please retry later.',
   'cmd.reply_mode.unsupported': '⚠️ /reply-mode only works in regular groups and DMs; topic groups need no setting (they are already threaded).',
   'cmd.reply_mode.owner_only': '⚠️ Only owner/allowedUsers can change the session mode.',
-  'cmd.reply_mode.usage': 'Usage: /reply-mode chat | chat-topic | topic | new-topic\nchat = flat replies reusing the group session (native topics fold in too); chat-topic = flat at top level, but each native topic runs its own independent session (default); topic = topic display while reusing the same group session (shared is a compatibility alias); new-topic = each @ opens a fresh topic + its own session. Native topics run their own session under chat-topic and new-topic; they fold into the group session under chat / shared.',
+  'cmd.reply_mode.usage': 'Usage: /reply-mode inherit | chat | chat-topic | topic | new-topic\ninherit = clear this group override and follow the bot default; chat = flat replies reusing the group session (native topics fold in too); chat-topic = flat at top level, but each native topic runs its own independent session (default); topic = topic display while reusing the same group session (shared is a compatibility alias); new-topic = each @ opens a fresh topic + its own session. Native topics run their own session under chat-topic and new-topic; they fold into the group session under chat / shared.',
   'cmd.reply_mode.failed': '⚠️ Failed to update reply mode: {reason}',
   'cmd.reply_mode.dm_status': 'Current DM session mode: {mode}\nCommands: /reply-mode chat | topic',
   'cmd.reply_mode.dm_updated': '✅ DM session mode updated to: {mode}',
@@ -468,6 +476,7 @@ export const messages: Record<string, string> = {
   'worktree.auto_creating': '🌿 Creating an isolated worktree for this session (includes a git fetch, may take a few seconds)…',
   'worktree.auto_created': '🌿 Auto-created an isolated worktree for this session: `{path}`\nBranch `{branch}`, based on `{base}`. Your default directory is untouched.',
   'worktree.auto_fallback': '⚠️ Could not create a worktree in the default directory `{dir}` ({error}); fell back to starting the session directly in the default directory.',
+  'worktree.auto_fail_closed': '⛔ File sandbox is enabled, but an isolated worktree could not be created in the default directory `{dir}` ({error}). To keep the agent\'s writes out of the real directory, this session was not started. Configure the default directory as a git repository and start again, or use /repo to pick a working directory manually.',
   'worktree.err_not_git': 'default directory is not a git repository (or could not be confirmed)',
   'cmd.skip.opened': '▶️ Session started (working dir: {cwd})',
   'cmd.status.running': 'running',
@@ -589,6 +598,11 @@ export const messages: Record<string, string> = {
   'cmd.adopt.resume_success': '↩️ Resumed {cliName} session · {project} — “{title}”',
   'cmd.adopt.resume_not_found': '⚠️ That past session no longer exists or is already in use.',
   'cmd.adopt.managed_other_topic': '⚠️ That ID belongs to a Botmux session in another topic and cannot be moved here with /adopt. Resume it from the original topic, or run `botmux resume {id}` locally.',
+  'cmd.resume.none': '⚠️ There is no closed session to resume here.',
+  'cmd.resume.lane_unsupported': 'ℹ️ That session is a parallel-lane shadow and cannot be resumed with /resume. Continue in the original session.',
+  'cmd.resume.primary_unsupported': 'ℹ️ This deployment runs durable coordination (primary); /resume is not supported yet. Click "Resume session" on the original session\'s close card instead.',
+  'cmd.resume.forked': '✅ Copied session "{title}" here with its full context. The original stays closed and can still be resumed where it was.',
+  'cmd.resume.fork_unsupported': 'ℹ️ This {cli} session cannot be resumed in another topic/chat (needs a native CLI fork, same limit as /fork). Resume it from its original topic/chat, or run `botmux resume {id}` locally.',
   'cmd.detach.success': '⏏ Disconnected. The original CLI session is untouched.',
   'cmd.detach.existing_app_server_success': '⏏ Disconnected BotMux’s remote Codex client. The development-machine App Server and Codex App conversation are still running.',
   'cmd.detach.failed': '⚠️ BotMux could not safely disconnect this shared entry. The original Codex App conversation is unaffected; please retry shortly.',
@@ -739,6 +753,8 @@ export const messages: Record<string, string> = {
   'cmd.config.allow_ok': '✅ Admin list updated ({total} entries, {count} open_ids resolved). Effective immediately.',
   'cmd.config.allow_lockout': '⛔ The new list does not include you — that would lock you out (self-lockout guard). Keep yourself in the list and retry.',
   'cmd.config.allow_empty': '⚠️ The new list resolved to empty (no email/ID could be resolved). Rejected.',
+  'cmd.config.allow_unusable_owner': '⛔ These open_ids do not belong to this bot\'s app — write rejected: {items}\nAn open_id (ou_) is only valid for the bot that issued it and cannot be copied from another bot. Use a full email, mobile number or on_ union_id instead.',
+  'cmd.config.allow_warn_union': '⚠️ These union_ids cannot be resolved by this app — saved but not yet effective: {items} (check that the user is within this app\'s contact visibility scope)',
   'cmd.group.empty_fallback': 'New session {ts}',
   'cmd.group.no_bot': '⚠️ Cannot identify the responding bot — /group aborted.',
   'cmd.group.no_sender': '⚠️ Cannot get sender open_id — /group aborted.',
@@ -843,6 +859,7 @@ export const messages: Record<string, string> = {
   'help.close': '/close      - Close current session, kill {cliName}',
   'help.cleanup_wt': '/cleanup-wt <ID> - Retry a failed worktree cleanup job',
   'help.lane': '/lane status|close - Inspect or safely close your isolated lane (protects uncommitted and unpushed work)',
+  'help.queue': '/queue <text> - Run after the active task (Codex App)',
   'help.stop': '/stop       - Interrupt the current turn, keep the session',
   'help.restart': '/restart    - Restart {cliName} (keep session)',
   'help.topic': '[title] /t [/repo <repo> | /repo wt <repo> [branch]] [/model <model>] [/effort <level>] [<first task>]  (alias /topic) - Start a topic in a regular group, declaring title, repo, model, reasoning effort and the first task in one message. Newlines are the same as spaces; the title goes BEFORE /t (Lark shows the raw message in its topic list and the bot cannot rewrite it); quote paths containing spaces; one bad field voids the whole header and replies with a usage error. Bare /t opens setup (repo picker when needed, otherwise waits for the next task or /repo); a bare /repo inside the header (no argument) starts right away in the default working dir, same as the picker card start-directly button. /repo wt <repo> [branch] creates a fresh worktree on that repo before starting: the branch may be omitted (auto-named from the title/task); when given it is only taken from the next word on the same line as the repo that looks like a branch name, so start a latin first task on a new line. Note that /repo inside the header takes a single token, while a standalone mid-session /repo still takes the rest of the line',
@@ -882,6 +899,7 @@ export const messages: Record<string, string> = {
   'help.heading_adopt': '📡 Session adopt:',
   'help.adopt': '/adopt              - Take over a running CLI session, or resume a past one from disk',
   'help.adopt_pane': '/adopt <tmux_pane>  - Adopt a specific tmux pane (or a past session id)',
+  'help.resume': '/resume [session id] - With no session here, resume a closed one (no arg = the latest); an id from elsewhere is copied here like /fork. With a session, goes to {cliName}\'s own /resume',
   'help.detach': '/detach             - Disconnect this topic from the adopted session (the original CLI is untouched; /disconnect is an alias)',
   'help.heading_collab': '🤝 Multi-bot collaboration:',
   'help.introduce': '/introduce          - Register the bots in this chat with each other by open_id for precise collaboration mentions',
@@ -915,7 +933,7 @@ export const messages: Record<string, string> = {
   'help.config_get': '/botconfig get  - Show this bot\'s current operational config',
   'help.config_set': '/botconfig set <field> <value>  - Change model/cli/lang/toggles; /botconfig help for all fields',
   'help.skills': '/skills ...    - View/manage this bot\'s skill policy (attach/detach require owner)',
-  'help.reply_mode': '/reply-mode [status|chat|chat-topic|topic|new-topic] - Show/change regular-group or DM reply/session mode',
+  'help.reply_mode': '/reply-mode [status|inherit|chat|chat-topic|topic|new-topic] - Show/change regular-group or DM reply/session mode',
   'help.heading_group': '🆕 One-shot session group:',
   'help.group': '/group <name>  (alias /g)  - Auto-create a group and invite you (the whole group = one CLI session)',
   'help.project': '/project enable|status|disable - Enable, inspect, or leave project-group mode in this ordinary group (owner only)',
@@ -1038,6 +1056,12 @@ export const messages: Record<string, string> = {
   // or it would conflict with http_response_mode again.
   'ai.followup.reminder_no_transport': 'This turn is a program-driven request/response: your entire reply is returned verbatim to the caller, not shown in any chat. Just follow the <botmux_http_response_mode> instructions in this turn\'s content; do not call botmux send, do not post to Feishu/Lark.',
   'ai.cursor.sender_note': 'The sender tag is metadata identifying the current speaker — never copy its open_id or name (e.g. ou_xxx:Alice) into your botmux send body or opening line; to @ the triggerer use botmux send --mention-back.',
+  // Cursor moves a shell command that outlives its wait limit into a background
+  // task; when it completes Cursor injects a synthetic user prompt ("Briefly
+  // inform the user about the task result…") and starts a new turn. That is not
+  // a Lark message and botmux cannot intercept it (#1504) — prompt-level only.
+  'ai.cursor.background_task_note': 'Cursor turns a shell command that outlives its wait limit into a background task; when it completes, Cursor injects a synthetic prompt like "Briefly inform the user about the task result and perform any follow-up actions" and starts a new turn — that is NOT a new message from the Lark user. When you receive it: if the result is already covered by an earlier reply or carries nothing new for the user, do not `botmux send` again — make the final assistant message just the single word `BOTMUX_NOTHING_TO_SEND`; only send one progress message when the result is genuinely new information (e.g. the final verdict of a build/test). Prefer waiting for commands synchronously (raise the wait limit as needed) instead of letting them fall into the background.',
+  'ai.cursor.background_task_note_transcript': 'Cursor turns a shell command that outlives its wait limit into a background task; when it completes, Cursor injects a synthetic prompt like "Briefly inform the user about the task result and perform any follow-up actions" and starts a new turn — that is NOT a new message from the Lark user. When you receive it: if the result is already covered by an earlier reply or carries nothing new for the user, make the final assistant message just the single word `BOTMUX_NOTHING_TO_SEND`; only answer briefly when the result is genuinely new information (e.g. the final verdict of a build/test). Prefer waiting for commands synchronously (raise the wait limit as needed) instead of letting them fall into the background.',
   'ai.bridge.attachments_label': '[Attachments]',
   'ai.bridge.mentions_label': '[@Mentions]',
 
@@ -1615,12 +1639,12 @@ export const messages: Record<string, string> = {
   // ─── i18n coverage v2: shared fragments + cards + chat messages ───────────
   'common.operator': 'By: {by}',
   'common.empty_paren': '(empty)',
-  'common.truncated_short': '…(truncated)',
 
   // Ask card
   'card.ask.field.deadline': 'Deadline',
   'card.ask.field.answerable': 'Can answer',
   'card.ask.question_n': 'Question {n}',
+  'card.ask.prompt_truncated': '(The question is too long and was truncated in this card; see the attached file in this thread for the full text.)',
   'card.ask.submit': 'Submit',
   'card.ask.submit_confirm_empty': 'Confirm empty submit',
   'card.ask.empty_warning': "⚠️ You haven't selected any option. Multi-select allows choosing none; if you really mean an empty answer, click \"Confirm empty submit\" again, otherwise select first and submit.",

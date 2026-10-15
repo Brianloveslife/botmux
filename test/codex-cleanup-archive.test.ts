@@ -1,6 +1,7 @@
+import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import type { Session } from '../src/types.js';
-import { archiveCodexForCleanup, restoreCodexCleanupArchive } from '../src/services/codex-cleanup-archive.js';
+import { archiveCodexForCleanup, restoreCodexCleanupArchive, captureCodexCleanupWorkerExit } from '../src/services/codex-cleanup-archive.js';
 import { cleanupIdleSessions } from '../src/dashboard/session-cleanup.js';
 import { runAutoCleanupTick } from '../src/dashboard/auto-cleanup.js';
 
@@ -103,4 +104,25 @@ describe('Codex idle cleanup archive journal', () => {
     expect(result).toMatchObject({ closed: 1, failed: 0, archiveFailed: 1 });
     expect(rpc).toHaveBeenCalledTimes(1);
   });
+  it('fails closed if the teardown fence cannot prove release, without issuing an archive RPC', async () => {
+    const rpc = vi.fn(); const row = session();
+    expect(await archiveCodexForCleanup(row, true, vi.fn(), rpc,
+      async () => { throw new Error('teardown unverified'); })).toBe('teardown unverified');
+    expect(rpc).not.toHaveBeenCalled();
+    expect(row.codexCleanupArchive).toBeUndefined();
+  });
+
+  it('a sent kill signal does not prove that the original Worker has exited', async () => {
+    const worker = Object.assign(new EventEmitter(), { killed: true, exitCode: null, signalCode: null });
+    const fence = captureCodexCleanupWorkerExit(worker as unknown as import('node:child_process').ChildProcess);
+    expect(fence).toBeInstanceOf(Promise);
+    let released = false;
+    void fence!.then(() => { released = true; });
+    await Promise.resolve();
+    expect(released).toBe(false);
+    worker.emit('exit', 0, null);
+    await fence;
+    expect(released).toBe(true);
+  });
+
 });

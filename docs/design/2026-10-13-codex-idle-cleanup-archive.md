@@ -36,3 +36,12 @@ Worker 退出仅表示进程结束，持久会话仍为 active 时，向 Dashboa
 卡片 ACK 不等待原生 RPC；归档任务仍进入同一串行生命周期队列。恢复在队列内重读 owned 记录，避免卡片刚返回时读取到尚无 journal 的旧快照。旧 closed 记录没有本功能 journal 时不补归档；pending 可重试，archived 重复关闭不重发 RPC。
 
 本轮使用隔离 checkout 完成构建及 mock 验证：10 个清理/关闭/恢复/休眠测试文件 185 项通过；手动关闭命令定向测试 13 项通过；会话卡片 dispatch、关闭消费者、删除边界测试 39 项通过。不同命令间存在测试文件重叠，不累加为唯一测试数。本轮未部署、未修改 live 配置、未操作真实 Codex 会话，未进行 UI 视觉验证。
+
+
+## 路径与关闭时序回归修复
+
+原生路径校验先 realpath home 与 rollout，再检查文件位于 canonical home 的 sessions / archived_sessions 子树；支持软链接 home，同时拒绝文件或目录软链接逃逸。Worker 在实际启动时冻结 executable 的真实路径；codex-app 取 runner 参数中的原生 --codex-bin，RPC 引擎使用同一稳定路径，发布 thread ID 时不再重新解析 PATH 或临时 alias。
+
+卡片关闭仍立即 ACK，但归档进入按 session 串行的生命周期队列后先等待原 Worker 的成功退出 fence（exit code 0）；已有 session_close_ready 在 teardown 前发送，不能证明原生线程已释放；重开也排在同一队列内。不能证明释放时不发归档，归档失败保留恢复 journal 并提示。回归包含真实 closeSession + fake Worker、退出前无 RPC、退出后 archive/unarchive 顺序及 archive 失败后的恢复。
+
+同步上游 master 后，强化异常退出拒绝归档后，22 个完整相关测试文件 1128 项通过（包含已发送 kill 信号但尚未退出的 Worker）；覆盖归档/恢复、路径逃逸、临时 executable alias 删除、关闭命令/飞书路由、配置及其它 CLI 挂起，无测试名过滤。构建在隔离目录使用上游钉住的 Bun 1.4.3 和 Node 24，未部署或操作真实 Codex 会话。

@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { startIpcServer, type IpcServerHandle } from '../src/core/dashboard-ipc-server.js';
 import * as pool from '../src/core/worker-pool.js';
@@ -16,11 +17,11 @@ vi.mock('../src/services/codex-app-threads.js', async original => ({
 let handle: IpcServerHandle | undefined;
 afterEach(async () => { await handle?.close(); handle = undefined; vi.restoreAllMocks(); vi.mocked(setCodexAppThreadArchived).mockReset(); });
 
-async function close(idleCleanup: boolean, enabled: boolean, patch: Partial<Session> = {}, fail = false) {
+async function close(idleCleanup: boolean, enabled: boolean, patch: Partial<Session> = {}, fail = false, worker?: any) {
   const row = { sessionId: 'mock-cleanup', status: 'active', cliId: 'codex', backendType: 'pty', larkAppId: 'mock-bot',
     cliSessionId: 'mock-native', codexCleanupTarget: { threadId: 'mock-native', codexHome: '/tmp/mock-codex', codexBin: '/tmp/mock-codex-bin' },
     ...patch } as Session;
-  vi.spyOn(pool, 'findActiveBySessionId').mockReturnValue({ session: row, larkAppId: row.larkAppId } as any);
+  vi.spyOn(pool, 'findActiveBySessionId').mockReturnValue({ session: row, larkAppId: row.larkAppId, worker } as any);
   vi.spyOn(store, 'getSession').mockReturnValue(row);
   vi.spyOn(store, 'getOwnedSession').mockReturnValue(row);
   vi.spyOn(store, 'updateSession').mockImplementation(() => {});
@@ -81,6 +82,22 @@ describe('daemon close idle-cleanup intent', () => {
     vi.mocked(setCodexAppThreadArchived).mockClear();
     await close(false, true, { status: 'closed', codexCleanupArchive: { threadId: 'mock-native', state: 'archived' } });
     expect(setCodexAppThreadArchived).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('IPC close also waits for original Worker exit and fails closed on abnormal exit (%s)', async abnormal => {
+    const worker = Object.assign(new EventEmitter(), { killed: false });
+    const closing = close(false, true, {}, false, worker);
+    try {
+      await vi.waitFor(() => expect(pool.closeSession).toHaveBeenCalled());
+      expect(setCodexAppThreadArchived).not.toHaveBeenCalled();
+      worker.emit('exit', abnormal ? null : 0, abnormal ? 'SIGKILL' : null);
+      const result = await closing;
+      expect(result.body.ok).toBe(true);
+      if (abnormal) {
+        expect(result.body.archiveError).toBe('codex_worker_teardown_unverified');
+        expect(setCodexAppThreadArchived).not.toHaveBeenCalled();
+      } else expect(setCodexAppThreadArchived).toHaveBeenCalledOnce();
+    } finally { worker.emit('exit', 0, null); await closing; }
   });
 
 });

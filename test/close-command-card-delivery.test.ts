@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import * as globalConfig from '../src/global-config.js';
 import { setCodexAppThreadArchived } from '../src/services/codex-app-threads.js';
 import { restoreCodexCleanupArchive } from '../src/services/codex-cleanup-archive.js';
@@ -116,6 +117,59 @@ describe('/close card delivery through the real session lifecycle', () => {
     expect(setCodexAppThreadArchived).toHaveBeenLastCalledWith(expect.objectContaining({ archived: false }));
     expect(row.codexCleanupArchive).toBeUndefined();
     expect(notify).not.toHaveBeenCalled();
+  });
+  it.each([false, true])('card ACK waits neither Worker nor RPC; reopen waits for release and handles archive failure (%s)', async fail => {
+    const f = fixture({ streamCardId: 'om_live' });
+    Object.assign(f.ds.session, { cliId: 'codex', backendType: 'pty', cliSessionId: 'mock-native',
+      codexCleanupTarget: { threadId: 'mock-native', codexHome: '/tmp/mock-home', codexBin: '/tmp/mock-bin' } });
+    sessionStore.updateSession(f.ds.session);
+    const worker = Object.assign(new EventEmitter(), { killed: false, send: vi.fn(), kill: vi.fn() });
+    f.ds.worker = worker as any;
+    f.ds.initConfig = { backendType: 'pty' } as any;
+    vi.spyOn(globalConfig, 'readGlobalConfig').mockReturnValue({ sessionCleanup: { archiveCodex: true } });
+    const notify = vi.fn(async () => undefined);
+    const nativeCalls: boolean[] = [];
+    vi.mocked(setCodexAppThreadArchived).mockImplementation(async opts => {
+      nativeCalls.push(opts.archived);
+      if (fail && opts.archived) throw new Error('mock archive failure after release');
+    });
+    let reopen: Promise<void> | undefined;
+    try {
+      const result = await workerPool.closeSession(f.ds.session.sessionId, {
+        awaitWorkerExit: false, explicitClose: true, onArchiveError: notify,
+      });
+      expect(result.ok).toBe(true);
+      const staleRow = sessionStore.getOwnedSession(f.ds.session.sessionId)!;
+      reopen = restoreCodexCleanupArchive(staleRow, sessionStore.updateSession, undefined,
+        () => sessionStore.getOwnedSession(f.ds.session.sessionId));
+      await new Promise(resolve => setImmediate(resolve));
+      expect(nativeCalls).toEqual([]);
+      worker.emit('exit', 0, null);
+      await reopen;
+      expect(nativeCalls).toEqual([true, false]);
+      expect(sessionStore.getOwnedSession(f.ds.session.sessionId)?.codexCleanupArchive).toBeUndefined();
+      if (fail) await vi.waitFor(() => expect(notify).toHaveBeenCalledWith('mock archive failure after release'));
+      else expect(notify).not.toHaveBeenCalled();
+    } finally { worker.emit('exit', 0, null); await reopen; }
+  });
+  it('does not archive after an abnormal Worker exit and reports unverified teardown', async () => {
+    const f = fixture();
+    Object.assign(f.ds.session, { cliId: 'codex', backendType: 'pty', cliSessionId: 'mock-native',
+      codexCleanupTarget: { threadId: 'mock-native', codexHome: '/tmp/mock-home', codexBin: '/tmp/mock-bin' } });
+    sessionStore.updateSession(f.ds.session);
+    const worker = Object.assign(new EventEmitter(), { killed: false, send: vi.fn(), kill: vi.fn() });
+    f.ds.worker = worker as any; f.ds.initConfig = { backendType: 'pty' } as any;
+    vi.spyOn(globalConfig, 'readGlobalConfig').mockReturnValue({ sessionCleanup: { archiveCodex: true } });
+    const notify = vi.fn(async () => undefined);
+    try {
+      expect((await workerPool.closeSession(f.ds.session.sessionId, {
+        awaitWorkerExit: false, explicitClose: true, onArchiveError: notify,
+      })).ok).toBe(true);
+      worker.emit('exit', null, 'SIGKILL');
+      await vi.waitFor(() => expect(notify).toHaveBeenCalledWith('codex_worker_teardown_unverified'));
+      expect(setCodexAppThreadArchived).not.toHaveBeenCalled();
+      expect(sessionStore.getOwnedSession(f.ds.session.sessionId)?.codexCleanupArchive).toBeUndefined();
+    } finally { worker.emit('exit', 0, null); }
   });
   it('background close leaves native Codex untouched even with the switch on', async () => {
     const f = fixture();
