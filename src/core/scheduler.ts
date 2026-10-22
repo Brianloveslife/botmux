@@ -70,8 +70,12 @@ export function updateRuntimeTaskState(
   return !!mutateRuntimeTask(id, task => ({ ...task, ...updates }), appId);
 }
 
-export function rollbackUnpublishedRuntimeTask(id: string, appId: string): boolean {
+export function rollbackUnpublishedRuntimeTask(id: string, appId: string, expectedPreconditionRef?: string): boolean {
   assertScheduleAuthorityAvailable();
+  // Creation may commit authority even when its JSON projection fails. Match
+  // the staged binding against runtime authority, never against that projection.
+  if (expectedPreconditionRef !== undefined
+    && runtimeTask(id, appId)?.preconditionRef !== expectedPreconditionRef) return false;
   if (!authorityStore?.isInitialized(appId)) return scheduleStore.removeTask(id, appId);
   const removed = authorityStore.rollbackUnpublishedDirectCreate(appId, id);
   if (removed) scheduleStore.removeAuthoritativeTaskProjection(id, appId);

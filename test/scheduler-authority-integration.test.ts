@@ -6,6 +6,8 @@ import { config } from '../src/config.js';
 import * as scheduler from '../src/core/scheduler.js';
 import { ScheduleAuthorityStore } from '../src/services/schedule-authority-store.js';
 import * as scheduleStore from '../src/services/schedule-store.js';
+import * as preconditionStore from '../src/services/schedule-precondition-store.js';
+import { createTaskWithOptionalPrecondition } from '../src/core/schedule-precondition-config.js';
 
 const APP = 'cli_authority';
 let dataDir: string;
@@ -84,6 +86,25 @@ describe('scheduler host authority integration', () => {
     projection.mockRestore();
     expect(scheduler.addTask(input)).toEqual(created);
     expect(scheduleStore.getTask(input.id, APP)).toEqual(created);
+  });
+
+  it('rolls back authority if projection and precondition activation both fail', () => {
+    vi.spyOn(scheduleStore, 'projectAuthoritativeTask')
+      .mockImplementation(() => { throw new Error('projection write failed'); });
+    const activate = vi.spyOn(preconditionStore, 'activateSchedulePrecondition')
+      .mockImplementation(() => { throw new Error('activation write failed'); });
+    expect(() => createTaskWithOptionalPrecondition(params, APP, 'echo 1'))
+      .toThrow('activation write failed');
+    const task = activate.mock.calls[0][0];
+    expect(store.getRecord(APP, task.id)).toBeUndefined();
+    expect(store.listTasks(APP)).toEqual([]);
+    expect(scheduleStore.getTask(task.id, APP)).toBeUndefined();
+  });
+
+  it('does not roll back a task belonging to a different staged precondition', () => {
+    const task = scheduler.addTask({ ...params, preconditionRef: 'spc_original' });
+    expect(scheduler.rollbackUnpublishedRuntimeTask(task.id, APP, 'spc_other')).toBe(false);
+    expect(store.getRecord(APP, task.id)?.task).toEqual(task);
   });
 
   it('ignores projection edits to enabled and nextRunAt', () => {
