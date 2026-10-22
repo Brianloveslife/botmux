@@ -1047,12 +1047,10 @@ export function addTask(params: {
     followActive: params.followActive === true ? true : undefined,
     model: params.model?.trim() || undefined,
     reasoningEffort: params.reasoningEffort,
-  });
-  if (task.larkAppId && authorityStore?.isInitialized(task.larkAppId)) {
-    authorityStore.createDirect(task);
-    project(task);
-  }
-  logger.info(`[scheduler] Added task "${task.name}" (${task.id}) — ${parsed.display}, next: ${nextRunAt ?? 'N/A'}`);
+  }, params.larkAppId && authorityStore?.isInitialized(params.larkAppId)
+    ? candidate => project(authorityStore!.createDirect(candidate))
+    : undefined);
+  logger.info(`[scheduler] Added task "${task.name}" (${task.id}) — ${task.parsed.display}, next: ${task.nextRunAt ?? 'N/A'}`);
   return task;
 }
 
